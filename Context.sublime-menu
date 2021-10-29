@@ -1,0 +1,10 @@
+[
+	{
+		"caption": "Listen to Competitive Companion",
+		"command": "ccompanion"
+	},
+	{
+		"caption":"Run On Tests",
+		"command": "lgmcoderunner"
+	}
+]
