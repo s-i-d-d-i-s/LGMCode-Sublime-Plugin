@@ -25,10 +25,14 @@ def MakeHandlerClassFromFilename(filename):
                 nfilename = filename + "_tests.txt"
                 if platform.system() == "Windows":
                     nfilename = filename + "_tests.txt"
-                print(nfilename)
                 
                 with open(nfilename, "w") as f:
                     f.write(json.dumps(ntests))
+
+                ## Fill Initial Input/Output
+                input_tc = ntests[0]['test'].strip()
+                output_tc = ntests[0]['correct_answers'][0].strip()
+                updateIO(input_tc,output_tc,filename)
                 updateStatus(filename)
             except Exception as e:
                 print("Error handling POST - " + str(e))
@@ -108,6 +112,13 @@ def updateStatus(file_name):
     folder_path = '/'.join(file_name.split('/')[:-1])
     with open(folder_path+'/status.txt','w') as f:
         f.write(parsedTC)
+
+def updateIO(input_tc, output_tc, file_name):
+    folder_path = '/'.join(file_name.split('/')[:-1])
+    with open(folder_path+'/input.txt','w') as f:
+        f.write(input_tc)
+    with open(folder_path+'/output.txt','w') as f:
+        f.write(output_tc)
 
 def getParsedTC(filename):
     tests = filename+"_tests.txt"
