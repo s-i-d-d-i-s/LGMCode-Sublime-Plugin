@@ -7,6 +7,76 @@ import threading
 import platform
 import os
 
+isWindows = platform.system() == "Windows"
+
+
+
+def getDelim():
+    if isWindows:
+        return '\\'
+    else:
+        return '/'
+
+
+
+def getParsedTC(filename):
+    tests = json.loads(open(filename+"_tests.txt",'r').read())
+    idx = 1
+    res = "Test Cases Parsed !\n----------\n\n"
+    for x in tests:
+        res += "Input {}:\n{}\nExpected {}:\n{}\n\n----------\n\n".format(idx,x["test"],idx,x["correct_answers"][0])
+        idx+=1
+    return res.strip()
+
+
+
+
+def updateStatus(file_name):
+    parsedTC = getParsedTC(file_name)
+    folder_path = getDelim().join(file_name.split(getDelim())[:-1])
+    status_path = folder_path+getDelim()+'status.txt'
+    with open(status_path,'w') as f:
+        f.write(parsedTC)
+
+
+
+def updateIO(input_tc, output_tc, file_name):
+    folder_path = getDelim().join(file_name.split(getDelim())[:-1])
+    input_path = folder_path+getDelim()+'input.txt'
+    output_path = folder_path+getDelim()+'output.txt'
+    with open(input_path,'w') as f:
+        f.write(input_tc)
+    with open(output_path,'w') as f:
+        f.write(output_tc)
+
+
+
+
+def getSummary(verdicts):
+    summary=""
+    for i in range(len(verdicts)):
+        summary += "Test #{}: {}".format(i+1,"Accepted" if verdicts[i]==True else "Wrong Answer")
+        summary += "\n"
+    return summary
+
+
+
+def getStatus(tests,folder_path,file_name):
+    tests = json.loads(tests)
+    idx,verdicts,res= 1, [],""
+    for x in tests:
+        output,verdict = getTC(x,idx,folder_path,file_name)
+        verdicts.append(verdict)
+        res += "{}\n\n----------\n\n".format(output)
+        idx+=1
+    summary = getSummary(verdicts)
+    res = summary + "\n----------\n"+res
+    return res
+
+
+
+
+
 def MakeHandlerClassFromFilename(filename):
     class HandleRequests(BaseHTTPRequestHandler):
         def do_POST(self):
@@ -23,17 +93,21 @@ def MakeHandlerClassFromFilename(filename):
                     }
                     ntests.append(ntest)
                 nfilename = filename + "_tests.txt"
-                if platform.system() == "Windows":
-                    nfilename = filename + "_tests.txt"
-                
+
+                ## Write the Tests to a file                
                 with open(nfilename, "w") as f:
                     f.write(json.dumps(ntests))
 
                 ## Fill Initial Input/Output
                 input_tc = ntests[0]['test'].strip()
                 output_tc = ntests[0]['correct_answers'][0].strip()
+
+
+                ## Update IO
                 updateIO(input_tc,output_tc,filename)
+                ## Update Status
                 updateStatus(filename)
+
             except Exception as e:
                 print("Error handling POST - " + str(e))
             threading.Thread(target=self.server.shutdown, daemon=True).start()
@@ -53,98 +127,65 @@ class CompetitiveCompanionServer:
 class ccompanionCommand(sublime_plugin.TextCommand):
     def run(self, edit):
         try:            
-            _thread.start_new_thread(CompetitiveCompanionServer.startServer,
-                                     (self.view.file_name(),))
-            
+            _thread.start_new_thread(CompetitiveCompanionServer.startServer,(self.view.file_name(),))
         except Exception as e:
             print("Error: unable to start thread - " + str(e))
 
 
 def getTC(testcase,index,folder_path,file_name):
     res = "Input {}:\n{}\nExpected {}:\n{}\n".format(index,testcase["test"],index,testcase["correct_answers"][0])
-    test_case_path = folder_path+'/temp_tc.txt'
+    test_case_path = folder_path+getDelim()+'temp_tc.txt'
     with open(test_case_path,'w') as f:
         f.write(testcase['test'])
-    if platform.system() == "Windows":
-        pass
-    else:
-        os.chdir(folder_path)
-        file_name = file_name.split('.')[0]
-        file_name = './{} < {} > temp_op.txt'.format(file_name,test_case_path)
-        os.system(file_name)
-        output = open('temp_op.txt').read()
-        res += "\nOutput {}:\n{}".format(index,output)
-        verd = output.strip() == testcase["correct_answers"][0].strip()
-        os.remove('temp_op.txt')
-        os.remove('temp_tc.txt')
-        return res,verd
+    os.chdir(folder_path)
+    run_command = getRunCommand(file_name,getLanguage(file_name))
+    os.system(run_command)
+    output = open('temp_op.txt').read()
+    res += "\nOutput {}:\n{}".format(index,output)
+    verd = output.strip() == testcase["correct_answers"][0].strip()
+    os.remove('temp_op.txt')
+    os.remove('temp_tc.txt')
+    return res,verd
+    
+def getLanguage(filename):
+    extension = filename.split('.')[-1]
+    if extension == 'cpp':
+        return 'C++'
+    return "Unknown Language"
 
-    return res,False
+def getCompileCommand(file_name,language):
+    if language == 'C++':
+        return 'g++ -std=c++14 {} -o {}'.format(file_name,file_name.split('.')[0])
+    return 'echo UnknownLanguage'
 
-def getStatus(tests,folder_path,file_name):
-    tests = json.loads(tests)
-    idx = 1
-    verds = []
-    res = ""
-    for x in tests:
-        op,verd = getTC(x,idx,folder_path,file_name)
-        verds.append(verd)
-        res += op
-        res += "\n"
-        res += "\n----------\n"
-        res += "\n"
-        idx+=1
-    summary = ""
-    for i in range(len(verds)):
-        verd = verds[i]
-        if verd :
-            verd = "Accepted"
-        else:
-            verd = "Wrong Answer"
-        summary += "Test #{}: {}".format(i+1,verd)
-        summary += "\n"
+def getRunCommand(file_name,language):
+    if language == 'C++':
+        return '{} < temp_tc.txt > temp_op.txt'.format(file_name.split('.')[0])
+    return 'echo UnknownLanguage'
 
-    res = summary + "\n----------\n"+res
-    return res
+def compileAndRunCode(_fileName,tests):
+    folder_path = getDelim().join(_fileName.split(getDelim())[:-1])
+    file_name = _fileName.split(getDelim())[-1]
+    language = getLanguage(file_name)
 
-def updateStatus(file_name):
-    parsedTC = getParsedTC(file_name)
-    folder_path = '/'.join(file_name.split('/')[:-1])
-    with open(folder_path+'/status.txt','w') as f:
-        f.write(parsedTC)
 
-def updateIO(input_tc, output_tc, file_name):
-    folder_path = '/'.join(file_name.split('/')[:-1])
-    with open(folder_path+'/input.txt','w') as f:
-        f.write(input_tc)
-    with open(folder_path+'/output.txt','w') as f:
-        f.write(output_tc)
+    if language == "Unknown Language":
+        with open(folder_path+getDelim()+'status.txt','w') as f:
+            f.write("Unknown Language")
+        return
 
-def getParsedTC(filename):
-    tests = filename+"_tests.txt"
-    tests = open(tests,'r').read()
-    tests = json.loads(tests)
-    idx = 1
-    res = "Test Cases Parsed !\n----------\n\n"
-    for x in tests:
-        res += "Input {}:\n{}\nExpected {}:\n{}".format(idx,x["test"],idx,x["correct_answers"][0])
-        res += "\n"
-        res += "\n----------\n"
-        res += "\n"
-        idx+=1
-    return res.strip()
+    os.chdir(folder_path)
+    compile_command = getCompileCommand(file_name,language)
+
+    print("Language: {}, Compile Command: {}".format(language,compile_command))
+    os.system(compile_command)
+
+    with open(folder_path+getDelim()+'status.txt','w') as f:
+        f.write(getStatus(tests,folder_path,file_name))
+
 class lgmcoderunnerCommand(sublime_plugin.TextCommand):
     def run(self, edit):
         tests = self.view.file_name()+"_tests.txt"
         tests = open(tests,'r').read()
-        folder_path = '/'.join(self.view.file_name().split('/')[:-1])
-        file_name = self.view.file_name().split('/')[-1]
-        os.chdir(folder_path)
-        if platform.system() == "Windows":
-            pass
-        else:
-            compile_command = 'g++ -std=c++14 {} -o {}'.format(file_name,file_name.split('.')[0])
-            print(compile_command)
-            os.system(compile_command)
-        with open(folder_path+'/status.txt','w') as f:
-            f.write(getStatus(tests,folder_path,file_name))
+        compileAndRunCode(self.view.file_name(),tests)
+        
